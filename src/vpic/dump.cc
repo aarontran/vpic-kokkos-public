@@ -37,43 +37,7 @@ int vpic_simulation::dump_cwd(char * dname, size_t size) {
 void
 vpic_simulation::dump_energies( const char *fname,
                                 int append ) {
-  double en_f[6], en_p;
-  species_t *sp;
-  FileIO fileIO;
-  FileIOStatus status(fail);
- 
-  if( !fname ) ERROR(("Invalid file name"));
- 
-  if( rank()==0 ) {
-    status = fileIO.open(fname, append ? io_append : io_write);
-    if( status==fail ) ERROR(( "Could not open \"%s\".", fname ));
-    else {
-      if( append==0 ) {
-        fileIO.print( "%% Layout\n%% step ex ey ez bx by bz" );
-        LIST_FOR_EACH(sp,species_list)
-          fileIO.print( " \"%s\"", sp->name );
-        fileIO.print( "\n" );
-        fileIO.print( "%% timestep = %e\n", grid->dt );
-      }
-      fileIO.print( "%li", (long)step() );
-    }
-  }
- 
-  field_array->kernel->energy_f( en_f, field_array );
-  if( rank()==0 && status!=fail )
-    fileIO.print( " %e %e %e %e %e %e",
-                  en_f[0], en_f[1], en_f[2],
-                  en_f[3], en_f[4], en_f[5] );
- 
-  LIST_FOR_EACH(sp,species_list) {
-    en_p = energy_p( sp, interpolator_array );
-    if( rank()==0 && status!=fail ) fileIO.print( " %e", en_p );
-  }
- 
-  if( rank()==0 && status!=fail ) {
-    fileIO.print( "\n" );
-    if( fileIO.close() ) ERROR(("File close failed on dump energies!!!"));
-  }
+  ERROR(("Use hyb_dump_energies(...)"));
 }
 
 

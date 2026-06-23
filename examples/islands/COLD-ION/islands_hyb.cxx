@@ -735,7 +735,7 @@ begin_diagnostics {
    * Normal rundata energies dump
    *------------------------------------------------------------------------*/
   if(should_dump(energies)) {
-    dump_energies("rundata/energies", step() == 0 ? 0 : 1);
+    hyb_dump_energies("rundata/energies", step() == 0 ? 0 : 1);
   } // if
 
   /*--------------------------------------------------------------------------
