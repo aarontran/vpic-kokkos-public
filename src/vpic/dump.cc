@@ -300,7 +300,7 @@ vpic_simulation::dump_particles( const char *sp_name,
 
   WRITE_HEADER_V0( dump_type::particle_dump, sp->id, sp->q/sp->m, fileIO );
  
-  dim[0] = sp->np;
+  dim[0] = sp->np / particle_stride;  // note intentional floor division
   WRITE_ARRAY_HEADER( p_buf, 1, dim, fileIO );
  
   // Copy a PBUF_SIZE hunk of the particle list into the particle
