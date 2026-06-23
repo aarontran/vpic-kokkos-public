@@ -266,6 +266,7 @@ vpic_simulation::dump_hydro( const char *sp_name,
 void
 vpic_simulation::dump_particles( const char *sp_name,
                                  const char *fbase,
+                                 int stride,
                                  int ftag ) {
   species_t *sp;
   char fname[256];
@@ -313,12 +314,29 @@ vpic_simulation::dump_particles( const char *sp_name,
   particle_t * sp_p = sp->p;      sp->p      = p_buf;
   int sp_np         = sp->np;     sp->np     = 0;
   int sp_max_np     = sp->max_np; sp->max_np = PBUF_SIZE;
-  for( buf_start=0; buf_start<sp_np; buf_start += PBUF_SIZE ) {
-    sp->np = sp_np-buf_start; if( sp->np > PBUF_SIZE ) sp->np = PBUF_SIZE;
-    COPY( sp->p, &sp_p[buf_start], sp->np );
-    center_p( sp, interpolator_array );
-    fileIO.write( sp->p, sp->np );
-  } 
+  // --------------------------------------------------
+  // Original, non-strided version
+  //for( buf_start=0; buf_start<sp_np; buf_start += PBUF_SIZE ) {
+  //  sp->np = sp_np-buf_start; if( sp->np > PBUF_SIZE ) sp->np = PBUF_SIZE;
+  //  COPY( sp->p, &sp_p[buf_start], sp->np );
+  //  center_p( sp, interpolator_array );
+  //  fileIO.write( sp->p, sp->np );
+  //}
+  // --------------------------------------------------
+  // Strided version
+  // Not guaranteed to dump same particles at different times
+  for( buf_start=0; buf_start<sp_np; buf_start += 1 ) {
+    if (buf_start % stride == 0) {
+      COPY( &(sp->p)[sp->np], &sp_p[buf_start], 1 );
+      sp->np += 1;
+    }
+    if (sp->np == PBUF_SIZE || buf_start == sp_np-1) {
+      center_p( sp, interpolator_array );
+      fileIO.write( sp->p, sp->np );
+      sp->np = 0;
+    }
+  }
+  // --------------------------------------------------
   sp->p      = sp_p;
   sp->np     = sp_np;
   sp->max_np = sp_max_np;
