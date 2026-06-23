@@ -1,0 +1,178 @@
+#! /usr/bin/env bash
+#------------------------------------------------------------------------------#
+# Build HybridVPIC on Purdue University's Anvil cluster, AMD Epyc 7763 nodes.
+# Forked from "arch/wisc-chtc-gcc", "arch/generic-gcc" and "arch/Chicoma",
+# see "arch/Chicoma" for detailed documentation on various flags.
+#------------------------------------------------------------------------------#
+
+#------------------------------------------------------------------------------#
+# Get the path to the project from which this script was called
+#------------------------------------------------------------------------------#
+
+src_dir="${0%/*}/.."
+
+#------------------------------------------------------------------------------#
+# Archive this script and VPIC commit into build path (current working dir)
+#------------------------------------------------------------------------------#
+
+cwd=$(pwd)
+archout="$cwd/arch.$(basename $0)"
+gitout="$cwd/commit.vpic-kokkos"
+
+echo "Copy arch config to $archout"
+
+rsync -ah $0 $archout
+
+echo "Record git commit to $gitout"
+
+echo "-----------------"                  > $gitout
+echo "Build information"                  >> $gitout
+echo "-----------------"                  >> $gitout
+echo "date='$(date)'"                     >> $gitout
+echo "src_dir='$(realpath ${src_dir})'"   >> $gitout
+echo "hostname='$(hostname -f)'"          >> $gitout
+echo "whoami='$(whoami)'"                 >> $gitout
+echo "-------------"                      >> $gitout
+echo "git remote -v"                      >> $gitout
+echo "-------------"                      >> $gitout
+git --git-dir="$src_dir/.git" remote -v   >> $gitout
+echo "------------"                       >> $gitout
+echo "git log -n 1"                       >> $gitout
+echo "------------"                       >> $gitout
+git --git-dir="$src_dir/.git" log -n 1    >> $gitout
+
+#------------------------------------------------------------------------------#
+# Configure environment using Lmod modules.
+#------------------------------------------------------------------------------#
+
+module purge
+module load intel/19.0.5.281
+module load cmake/3.20.0
+module load impi/2019.5.281
+module load hdf5/1.10.7
+
+#------------------------------------------------------------------------------#
+# Configure default compilers
+#------------------------------------------------------------------------------#
+
+#VPIC_COMPILER_C="mpiicc"
+#VPIC_COMPILER_CXX="mpiicpc"
+
+# Anvil wrappers point to parallel compilers, no need to use h5pcc or h5pc++
+VPIC_COMPILER_C="h5cc"
+VPIC_COMPILER_CXX="h5c++"
+
+#------------------------------------------------------------------------------#
+# Configure options for the Intel Parallel Studio compilers.
+#------------------------------------------------------------------------------#
+
+# AMD's recommended compiler flags
+#     https://www.amd.com/content/dam/amd/en/documents/epyc-technical-docs/programmer-references/compiler-options-quick-ref-guide-epyc-7xx3-series-processors.pdf
+# Best-practices guide with benchmark data by Xu Guo (EPCC, UK) from 2019.
+#     https://prace-ri.eu/wp-content/uploads/Best-Practice-Guide_AMD.pdf
+
+# Use of "-Wl,--export-dynamic" removes following type of VPIC warnings.
+#
+# Unable to find a safely writable symbol that corresponds to address
+# 432af0 (the closest match was "(null)" from "./lpi_2d_F6_test.Linux").
+# Writing out the raw address instead and keeping my fingers crossed.
+
+FLAGS_CXX_COMPILER="-O2 -march=core-avx2 -fp-model=precise"
+FLAGS_CXX_COMPILER+=" -no-ansi-alias -Wl,--export-dynamic"
+
+FLAGS_C_COMPILER="-O2 -march=core-avx2 -fp-model=precise"
+FLAGS_C_COMPILER+=" -no-ansi-alias -Wl,--export-dynamic"
+
+# Using -O3 is marginally worse or about the same as compared to -O2.
+# Using -fp-model=precise does not show any performance penalty, if anything
+# marginally better.  --ATr,2023nov20
+
+# It's possible to specify SSE = Streaming SIMD Extension???
+# See other example ARCH files... -DUSE_V4_SSE=ON is passed to cmake
+# See regular VPIC README at https://github.com/lanl/vpic
+
+# Optimization flags
+# -O3
+# -inline-forceinline
+# -qoverride-limits
+# -no-ansi-alias
+# -Winline
+
+## IMPORTANT FOR NEWER INTEL CORES
+# -xCORE-AVX      # sandy/ivy bridge
+# -xCORE-AVX2     # broadwell, haswell
+# -xMIC-AVX512    # knights landing
+# -qopt-zmm-usage=high -xCORE-AVX512  # cascade lake (e.g. xeon gold 6226)
+
+# Optimization diagnosis
+# -qopt-report=5
+# -qopt-report-phase=vec
+# -diag-disable 10397
+
+# Compilation messaging
+# -Wl,--export-dynamic
+
+# Debugging flags
+# -g  
+
+#------------------------------------------------------------------------------#
+# Configure CMake options
+#------------------------------------------------------------------------------#
+
+# If SET_MORE_DIGITS=OFF, the output has two significant figures.
+# If SET_MORE_DIGITS=ON, the output has four significant figures.
+# One of the two available options must be chosen.
+
+SET_MORE_DIGITS="OFF"
+#SET_MORE_DIGITS="ON"
+
+#------------------------------------------------------------------------------#
+# Call CMake command
+#------------------------------------------------------------------------------#
+# Notes:
+#
+# The "-LAH" command line option causes cmake to output the values of all of
+# its variables. This is useful when debugging a failed build.
+#------------------------------------------------------------------------------#
+
+cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$VPIC_COMPILER_C \
+  -DCMAKE_CXX_COMPILER=$VPIC_COMPILER_CXX \
+  -DCMAKE_C_FLAGS="$FLAGS_C_COMPILER" \
+  -DCMAKE_CXX_FLAGS="$FLAGS_CXX_COMPILER" \
+  -DVPIC_PRINT_MORE_DIGITS=$SET_MORE_DIGITS \
+  $src_dir
+
+#-DSHAPE_NGP=ON \
+
+#------------------------------------------------------------------------------#
+# Call make command.
+#------------------------------------------------------------------------------#
+# Notes:
+#
+# In general, it is necessary to call the "make" command within this script
+# because the module environment has been configured within this script.
+#
+# Setting VERBOSE=1 causes "make" to output the commands it is executing.
+# This information is useful if debugging a failed build.
+#
+# If the NJ variable is not defined, "make" will perform a parallel build
+# using maximum number of processors on the compilation machine. If using
+# VERBOSE=1, the verbose output will be garbled by many processes writing
+# to STDOUT at the same time and will be difficult to interpret. When using
+# VERBOSE=1, it can be helpful to also use NJ=1.
+#------------------------------------------------------------------------------#
+
+#make -j VERBOSE=0
+
+# for debugging
+#make -j 1 VERBOSE=1
+
+#------------------------------------------------------------------------------#
+# Done.
+#------------------------------------------------------------------------------#
+
+#------------------------------------------------------------------------------#
+# vim: syntax=sh
+#------------------------------------------------------------------------------#

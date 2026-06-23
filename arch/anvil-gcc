@@ -1,0 +1,153 @@
+#! /usr/bin/env bash
+#------------------------------------------------------------------------------#
+# Build HybridVPIC on Purdue University's Anvil cluster, AMD Epyc 7763 nodes.
+# Forked from "arch/wisc-chtc-gcc", "arch/generic-gcc" and "arch/Chicoma",
+# see "arch/Chicoma" for detailed documentation on various flags.
+#------------------------------------------------------------------------------#
+
+#------------------------------------------------------------------------------#
+# Get the path to the project from which this script was called
+#------------------------------------------------------------------------------#
+
+src_dir="${0%/*}/.."
+
+#------------------------------------------------------------------------------#
+# Archive this script and VPIC commit into build path (current working dir)
+#------------------------------------------------------------------------------#
+
+cwd=$(pwd)
+archout="$cwd/arch.$(basename $0)"
+gitout="$cwd/commit.vpic-kokkos"
+
+echo "Copy arch config to $archout"
+
+rsync -ah $0 $archout
+
+echo "Record git commit to $gitout"
+
+echo "-----------------"                  > $gitout
+echo "Build information"                  >> $gitout
+echo "-----------------"                  >> $gitout
+echo "date='$(date)'"                     >> $gitout
+echo "src_dir='$(realpath ${src_dir})'"   >> $gitout
+echo "hostname='$(hostname -f)'"          >> $gitout
+echo "whoami='$(whoami)'"                 >> $gitout
+echo "-------------"                      >> $gitout
+echo "git remote -v"                      >> $gitout
+echo "-------------"                      >> $gitout
+git --git-dir="$src_dir/.git" remote -v   >> $gitout
+echo "------------"                       >> $gitout
+echo "git log -n 1"                       >> $gitout
+echo "------------"                       >> $gitout
+git --git-dir="$src_dir/.git" log -n 1    >> $gitout
+
+#------------------------------------------------------------------------------#
+# Configure environment using Lmod modules.
+#------------------------------------------------------------------------------#
+
+module purge
+module load gcc/11.2.0
+module load cmake/3.20.0
+module load openmpi/4.0.6
+
+#------------------------------------------------------------------------------#
+# Configure default compilers
+#------------------------------------------------------------------------------#
+
+VPIC_COMPILER_C="mpicc"
+VPIC_COMPILER_CXX="mpicxx"
+
+#------------------------------------------------------------------------------#
+# Configure options for the GNU compilers.
+#------------------------------------------------------------------------------#
+
+# The flag -rdynamic removes warnings of the form:
+# Unable to find a safely writable symbol that corresponds to address 432af0
+# (the closest match was "(null)" from "./lpi_2d_F6_test.Linux").  Writing out
+# the raw address instead and keeping my fingers crossed.
+
+FLAGS_CXX_COMPILER="-O2 -fno-strict-aliasing -rdynamic"  # best so far
+#FLAGS_CXX_COMPILER="-O3 -march=znver3 -mtune=znver3 -mfma -mavx2 -fomit-frame-pointer -fno-strict-aliasing -fno-unsafe-math-optimizations -rdynamic"  # weirdly bad
+#FLAGS_CXX_COMPILER="-O2 -march=znver3 -mtune=znver3 -ftree-vectorize -fno-strict-aliasing -fno-unsafe-math-optimizations -rdynamic"  # still bad but not as bad
+
+#FLAGS_CXX_COMPILER+=" -g"
+#FLAGS_CXX_COMPILER+=" -ffast-math"
+#FLAGS_CXX_COMPILER+=" -fno-unsafe-math-optimizations"
+#FLAGS_CXX_COMPILER+=" -fomit-frame-pointer"
+#FLAGS_CXX_COMPILER+=" -Winline"
+#FLAGS_CXX_COMPILER+=" -dynamic"
+#FLAGS_CXX_COMPILER+=" -march=znver3"
+
+FLAGS_C_COMPILER="-O2 -fno-strict-aliasing -rdynamic"  # best so far
+#FLAGS_C_COMPILER="-O3 -march=znver3 -mtune=znver3 -mfma -mavx2 -fomit-frame-pointer -fno-strict-aliasing -fno-unsafe-math-optimizations -rdynamic"  # weirdly bad
+#FLAGS_CXX_COMPILER="-O2 -march=znver3 -mtune=znver3 -ftree-vectorize -fno-strict-aliasing -fno-unsafe-math-optimizations -rdynamic"  # still bad but not as bad
+
+#FLAGS_C_COMPILER+=" -g"
+#FLAGS_C_COMPILER+=" -ffast-math"
+#FLAGS_C_COMPILER+=" -fno-unsafe-math-optimizations"
+#FLAGS_C_COMPILER+=" -fomit-frame-pointer"
+#FLAGS_C_COMPILER+=" -Winline"
+#FLAGS_C_COMPILER+=" -dynamic"
+#FLAGS_C_COMPILER+=" -march=znver3"
+
+#------------------------------------------------------------------------------#
+# Configure CMake options
+#------------------------------------------------------------------------------#
+
+# If SET_MORE_DIGITS=OFF, the output has two significant figures.
+# If SET_MORE_DIGITS=ON, the output has four significant figures.
+# One of the two available options must be chosen.
+
+SET_MORE_DIGITS="OFF"
+#SET_MORE_DIGITS="ON"
+
+#------------------------------------------------------------------------------#
+# Call CMake command
+#------------------------------------------------------------------------------#
+# Notes:
+#
+# The "-LAH" command line option causes cmake to output the values of all of
+# its variables. This is useful when debugging a failed build.
+#------------------------------------------------------------------------------#
+
+cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_C_COMPILER=$VPIC_COMPILER_C \
+  -DCMAKE_CXX_COMPILER=$VPIC_COMPILER_CXX \
+  -DCMAKE_C_FLAGS="$FLAGS_C_COMPILER" \
+  -DCMAKE_CXX_FLAGS="$FLAGS_CXX_COMPILER" \
+  -DVPIC_PRINT_MORE_DIGITS=$SET_MORE_DIGITS \
+  $src_dir
+
+#-DSHAPE_NGP=ON \
+
+#------------------------------------------------------------------------------#
+# Call make command.
+#------------------------------------------------------------------------------#
+# Notes:
+#
+# In general, it is necessary to call the "make" command within this script
+# because the module environment has been configured within this script.
+#
+# Setting VERBOSE=1 causes "make" to output the commands it is executing.
+# This information is useful if debugging a failed build.
+#
+# If the NJ variable is not defined, "make" will perform a parallel build
+# using maximum number of processors on the compilation machine. If using
+# VERBOSE=1, the verbose output will be garbled by many processes writing
+# to STDOUT at the same time and will be difficult to interpret. When using
+# VERBOSE=1, it can be helpful to also use NJ=1.
+#------------------------------------------------------------------------------#
+
+#make -j VERBOSE=0
+
+# for debugging
+#make -j 1 VERBOSE=1
+
+#------------------------------------------------------------------------------#
+# Done.
+#------------------------------------------------------------------------------#
+
+#------------------------------------------------------------------------------#
+# vim: syntax=sh
+#------------------------------------------------------------------------------#
